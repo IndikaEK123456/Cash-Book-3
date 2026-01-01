@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const { 
     data, 
     bookId, 
+    isSyncing,
     setSyncKey, 
     addOutPartyEntry, 
     deleteOutPartyEntry,
@@ -20,7 +21,7 @@ const App: React.FC = () => {
     performDayEnd 
   } = useCashBookStore();
 
-  // Device Detection & Initialization
+  // Device Detection
   useEffect(() => {
     const ua = navigator.userAgent;
     if (/Android/i.test(ua)) {
@@ -39,7 +40,7 @@ const App: React.FC = () => {
       if (liveRates) setRates(liveRates);
     };
     updateRates();
-    const interval = setInterval(updateRates, 600000); // 10 minutes
+    const interval = setInterval(updateRates, 600000);
     return () => clearInterval(interval);
   }, []);
 
@@ -49,6 +50,7 @@ const App: React.FC = () => {
       rates={rates} 
       date={data.date} 
       bookId={bookId} 
+      isSyncingStatus={isSyncing}
       onUpdateKey={setSyncKey}
     >
       <CashSection 
@@ -63,9 +65,8 @@ const App: React.FC = () => {
         openingBalance={data.openingBalance}
       />
       
-      {/* Real-time Footer Info */}
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[10px] p-1 text-center font-bold tracking-widest uppercase border-t border-slate-800 backdrop-blur-md bg-opacity-95 z-50">
-        Active Shared Book: {bookId} • Shivas Beach Cabanas • Status: Online
+        Active Shared Book: {bookId} • {deviceType} VIEW • Status: Connected
       </div>
     </Layout>
   );

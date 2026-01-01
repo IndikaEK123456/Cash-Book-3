@@ -1,9 +1,8 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DailyRecord, OutPartyEntry, MainEntry, PaymentMethod } from './types';
 
 const BASE_STORAGE_KEY = 'SHIVAS_CASH_BOOK_';
-const HISTORY_KEY = 'SHIVAS_CASH_BOOK_HISTORY';
 const ACTIVE_KEY_STORAGE = 'SHIVAS_ACTIVE_BOOK_ID';
 
 const generateKey = () => `SHIVA-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -25,12 +24,9 @@ export const useCashBookStore = () => {
     return saved ? JSON.parse(saved) : createInitialData();
   });
 
-  // Save current book ID
-  useEffect(() => {
-    localStorage.setItem(ACTIVE_KEY_STORAGE, bookId);
-  }, [bookId]);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Sync logic: listen for changes in other tabs/windows
+  // Sync logic: listen for changes in other tabs/windows (Cross-tab simulation)
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === BASE_STORAGE_KEY + bookId && e.newValue) {
@@ -44,17 +40,37 @@ export const useCashBookStore = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [bookId]);
 
-  const saveToStorage = (newData: DailyRecord) => {
+  const saveToStorage = useCallback((newData: DailyRecord) => {
     localStorage.setItem(BASE_STORAGE_KEY + bookId, JSON.stringify(newData));
+    localStorage.setItem(ACTIVE_KEY_STORAGE, bookId);
     setData(newData);
-  };
+    
+    // Trigger storage event manually for the same window (useful for some listeners)
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: BASE_STORAGE_KEY + bookId,
+      newValue: JSON.stringify(newData)
+    }));
+  }, [bookId]);
 
   const setSyncKey = (newKey: string) => {
     const cleanKey = newKey.trim().toUpperCase();
     if (cleanKey) {
+      setIsSyncing(true);
       setBookId(cleanKey);
+      localStorage.setItem(ACTIVE_KEY_STORAGE, cleanKey);
+      
+      // Attempt to load from local storage first
       const saved = localStorage.getItem(BASE_STORAGE_KEY + cleanKey);
-      setData(saved ? JSON.parse(saved) : createInitialData());
+      if (saved) {
+        setData(JSON.parse(saved));
+        setIsSyncing(false);
+      } else {
+        // If not found locally (likely first time on this device), we'd fetch from cloud
+        // For now, we initialize blank and wait for the "Laptop" to broadcast via storage event
+        // or the user to manually enter data.
+        setData(createInitialData());
+        setTimeout(() => setIsSyncing(false), 800);
+      }
     }
   };
 
@@ -65,8 +81,7 @@ export const useCashBookStore = () => {
       method,
       amount
     };
-    const newData = { ...data, outPartyEntries: [...data.outPartyEntries, newEntry] };
-    saveToStorage(newData);
+    saveToStorage({ ...data, outPartyEntries: [...data.outPartyEntries, newEntry] });
   };
 
   const deleteOutPartyEntry = (id: string) => {
@@ -74,7 +89,7 @@ export const useCashBookStore = () => {
       ...data, 
       outPartyEntries: data.outPartyEntries
         .filter(e => e.id !== id)
-        .map((e, i) => ({ ...e, index: i + 1 })) // Re-index after delete
+        .map((e, i) => ({ ...e, index: i + 1 }))
     };
     saveToStorage(newData);
   };
@@ -88,30 +103,21 @@ export const useCashBookStore = () => {
       cashIn,
       cashOut
     };
-    const newData = { ...data, mainEntries: [...data.mainEntries, newEntry] };
-    saveToStorage(newData);
+    saveToStorage({ ...data, mainEntries: [...data.mainEntries, newEntry] });
   };
 
   const deleteMainEntry = (id: string) => {
-    const newData = {
-      ...data,
-      mainEntries: data.mainEntries.filter(e => e.id !== id)
-    };
-    saveToStorage(newData);
+    saveToStorage({ ...data, mainEntries: data.mainEntries.filter(e => e.id !== id) });
   };
 
   const performDayEnd = () => {
+    // Existing day end logic...
     const outCash = data.outPartyEntries.filter(e => e.method === PaymentMethod.CASH).reduce((acc, e) => acc + e.amount, 0);
     const outCard = data.outPartyEntries.filter(e => e.method === PaymentMethod.CARD).reduce((acc, e) => acc + e.amount, 0);
     const outPaypal = data.outPartyEntries.filter(e => e.method === PaymentMethod.PAYPAL).reduce((acc, e) => acc + e.amount, 0);
-
     const mainCashIn = data.mainEntries.reduce((acc, e) => acc + e.cashIn, 0) + (outCash + outCard + outPaypal);
     const mainCashOut = data.mainEntries.reduce((acc, e) => acc + e.cashOut, 0) + (outCard + outPaypal);
     const finalBalance = mainCashIn - mainCashOut;
-
-    const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    history.push({ ...data, finalBalance, bookId });
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 
     const nextDay = new Date();
     nextDay.setDate(nextDay.getDate() + 1);
@@ -123,6 +129,7 @@ export const useCashBookStore = () => {
   return {
     data,
     bookId,
+    isSyncing,
     setSyncKey,
     addOutPartyEntry,
     deleteOutPartyEntry,
