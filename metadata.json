@@ -1,0 +1,7 @@
+{
+  "name": "Shivas Beach Cabanas Cash Book",
+  "description": "A professional cash book management system with live synchronization across laptop (admin) and mobile (viewer) versions, featuring out-party and main section tracking.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
