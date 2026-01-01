@@ -1,6 +1,7 @@
 
-import { useState, useEffect, useCallback } from 'react';
-import { DailyRecord, OutPartyEntry, MainEntry, PaymentMethod } from './types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { DailyRecord, OutPartyEntry, MainEntry, PaymentMethod, DeviceType } from './types';
+import { pushToCloud, fetchFromCloud } from './services/syncService';
 
 const BASE_STORAGE_KEY = 'SHIVAS_CASH_BOOK_';
 const ACTIVE_KEY_STORAGE = 'SHIVAS_ACTIVE_BOOK_ID';
@@ -14,7 +15,7 @@ const createInitialData = (dateStr?: string): DailyRecord => ({
   openingBalance: 0
 });
 
-export const useCashBookStore = () => {
+export const useCashBookStore = (deviceType: DeviceType) => {
   const [bookId, setBookId] = useState<string>(() => {
     return localStorage.getItem(ACTIVE_KEY_STORAGE) || generateKey();
   });
@@ -25,52 +26,75 @@ export const useCashBookStore = () => {
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const lastSyncRef = useRef<string>("");
 
-  // Sync logic: listen for changes in other tabs/windows (Cross-tab simulation)
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === BASE_STORAGE_KEY + bookId && e.newValue) {
-        setData(JSON.parse(e.newValue));
-      }
-      if (e.key === ACTIVE_KEY_STORAGE && e.newValue) {
-        setBookId(e.newValue);
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [bookId]);
+  // Save and Sync Helper
+  const syncWithCloud = useCallback(async (newData: DailyRecord) => {
+    // Only push if we are on Laptop (Admin)
+    if (deviceType === DeviceType.LAPTOP) {
+      setIsSyncing(true);
+      await pushToCloud(bookId, newData);
+      setIsSyncing(false);
+    }
+  }, [bookId, deviceType]);
 
   const saveToStorage = useCallback((newData: DailyRecord) => {
     localStorage.setItem(BASE_STORAGE_KEY + bookId, JSON.stringify(newData));
     localStorage.setItem(ACTIVE_KEY_STORAGE, bookId);
     setData(newData);
     
-    // Trigger storage event manually for the same window (useful for some listeners)
+    // Trigger Cloud Push
+    syncWithCloud(newData);
+    
+    // Trigger local storage event for same-device cross-tab
     window.dispatchEvent(new StorageEvent('storage', {
       key: BASE_STORAGE_KEY + bookId,
       newValue: JSON.stringify(newData)
     }));
-  }, [bookId]);
+  }, [bookId, syncWithCloud]);
 
-  const setSyncKey = (newKey: string) => {
+  // Polling Logic for Mobile Devices (Viewers)
+  useEffect(() => {
+    if (deviceType === DeviceType.LAPTOP) return; // Laptop doesn't poll, it pushes
+
+    const poll = async () => {
+      setIsSyncing(true);
+      const cloudData = await fetchFromCloud(bookId);
+      if (cloudData) {
+        const cloudStr = JSON.stringify(cloudData);
+        if (cloudStr !== lastSyncRef.current) {
+          setData(cloudData);
+          localStorage.setItem(BASE_STORAGE_KEY + bookId, cloudStr);
+          lastSyncRef.current = cloudStr;
+        }
+      }
+      setIsSyncing(false);
+    };
+
+    poll(); // Initial poll
+    const interval = setInterval(poll, 3000); // Poll every 3 seconds for near real-time
+    return () => clearInterval(interval);
+  }, [bookId, deviceType]);
+
+  // Handle Book ID Change
+  const setSyncKey = async (newKey: string) => {
     const cleanKey = newKey.trim().toUpperCase();
     if (cleanKey) {
-      setIsSyncing(true);
       setBookId(cleanKey);
       localStorage.setItem(ACTIVE_KEY_STORAGE, cleanKey);
       
-      // Attempt to load from local storage first
-      const saved = localStorage.getItem(BASE_STORAGE_KEY + cleanKey);
-      if (saved) {
-        setData(JSON.parse(saved));
-        setIsSyncing(false);
+      // Immediate cloud fetch when key changes
+      setIsSyncing(true);
+      const cloudData = await fetchFromCloud(cleanKey);
+      if (cloudData) {
+        setData(cloudData);
+        localStorage.setItem(BASE_STORAGE_KEY + cleanKey, JSON.stringify(cloudData));
       } else {
-        // If not found locally (likely first time on this device), we'd fetch from cloud
-        // For now, we initialize blank and wait for the "Laptop" to broadcast via storage event
-        // or the user to manually enter data.
-        setData(createInitialData());
-        setTimeout(() => setIsSyncing(false), 800);
+        // If not on cloud, check local or start new
+        const saved = localStorage.getItem(BASE_STORAGE_KEY + cleanKey);
+        setData(saved ? JSON.parse(saved) : createInitialData());
       }
+      setIsSyncing(false);
     }
   };
 
@@ -111,7 +135,6 @@ export const useCashBookStore = () => {
   };
 
   const performDayEnd = () => {
-    // Existing day end logic...
     const outCash = data.outPartyEntries.filter(e => e.method === PaymentMethod.CASH).reduce((acc, e) => acc + e.amount, 0);
     const outCard = data.outPartyEntries.filter(e => e.method === PaymentMethod.CARD).reduce((acc, e) => acc + e.amount, 0);
     const outPaypal = data.outPartyEntries.filter(e => e.method === PaymentMethod.PAYPAL).reduce((acc, e) => acc + e.amount, 0);

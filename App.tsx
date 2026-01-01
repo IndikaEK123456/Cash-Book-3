@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Layout from './components/Layout';
 import CashSection from './components/CashSection';
 import { useCashBookStore } from './store';
@@ -7,8 +7,16 @@ import { DeviceType, CurrencyRates } from './types';
 import { fetchLiveRates } from './services/geminiService';
 
 const App: React.FC = () => {
-  const [deviceType, setDeviceType] = useState<DeviceType>(DeviceType.LAPTOP);
+  // Device detection happens once on mount
+  const detectedDevice = useMemo(() => {
+    const ua = navigator.userAgent;
+    if (/Android/i.test(ua)) return DeviceType.ANDROID;
+    if (/iPhone|iPad|iPod/i.test(ua)) return DeviceType.IPHONE;
+    return DeviceType.LAPTOP;
+  }, []);
+
   const [rates, setRates] = useState<CurrencyRates | null>(null);
+  
   const { 
     data, 
     bookId, 
@@ -19,19 +27,7 @@ const App: React.FC = () => {
     addMainEntry, 
     deleteMainEntry,
     performDayEnd 
-  } = useCashBookStore();
-
-  // Device Detection
-  useEffect(() => {
-    const ua = navigator.userAgent;
-    if (/Android/i.test(ua)) {
-      setDeviceType(DeviceType.ANDROID);
-    } else if (/iPhone|iPad|iPod/i.test(ua)) {
-      setDeviceType(DeviceType.IPHONE);
-    } else {
-      setDeviceType(DeviceType.LAPTOP);
-    }
-  }, []);
+  } = useCashBookStore(detectedDevice);
 
   // Fetch Live Currency Rates via Gemini
   useEffect(() => {
@@ -46,7 +42,7 @@ const App: React.FC = () => {
 
   return (
     <Layout 
-      deviceType={deviceType} 
+      deviceType={detectedDevice} 
       rates={rates} 
       date={data.date} 
       bookId={bookId} 
@@ -54,7 +50,7 @@ const App: React.FC = () => {
       onUpdateKey={setSyncKey}
     >
       <CashSection 
-        deviceType={deviceType}
+        deviceType={detectedDevice}
         outPartyEntries={data.outPartyEntries}
         mainEntries={data.mainEntries}
         onAddOutParty={addOutPartyEntry}
@@ -66,7 +62,7 @@ const App: React.FC = () => {
       />
       
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[10px] p-1 text-center font-bold tracking-widest uppercase border-t border-slate-800 backdrop-blur-md bg-opacity-95 z-50">
-        Active Shared Book: {bookId} • {deviceType} VIEW • Status: Connected
+        Active Shared Book: {bookId} • {detectedDevice} VIEW • Status: {isSyncing ? 'Syncing...' : 'Connected'}
       </div>
     </Layout>
   );
