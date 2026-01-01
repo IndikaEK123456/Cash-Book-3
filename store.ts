@@ -1,176 +1,137 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DailyRecord, HistoryRecord, AppState, OutPartyEntry, MainEntry, PaymentMethod, DeviceType } from './types';
+import { DailyRecord, HistoryRecord, AppState, OutPartyEntry, MainEntry, PaymentMethod, UserRole, DeviceType } from './types';
 import { pushToCloud, fetchFromCloud } from './services/syncService';
 
-const BASE_STORAGE_KEY = 'SHIVAS_APP_STATE_';
-const ACTIVE_KEY_STORAGE = 'SHIVAS_ACTIVE_BOOK_ID';
+const STORAGE_KEY = 'SHIVAS_CASHBOOK_STATE';
+const BOOK_ID_KEY = 'SHIVAS_BOOK_ID';
+const ROLE_KEY = 'SHIVAS_USER_ROLE';
 
 const generateKey = () => `SHIVA-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-const createInitialDay = (dateStr?: string): DailyRecord => ({
+const createInitialDay = (dateStr?: string, opening: number = 0): DailyRecord => ({
   date: dateStr || new Date().toLocaleDateString(),
   outPartyEntries: [],
   mainEntries: [],
-  openingBalance: 0,
+  openingBalance: opening,
   lastUpdated: Date.now()
 });
 
-export const useCashBookStore = (deviceType: DeviceType) => {
-  const [bookId, setBookId] = useState<string>(() => {
-    return localStorage.getItem(ACTIVE_KEY_STORAGE) || generateKey();
-  });
-
+export const useCashBookStore = () => {
+  const [bookId, setBookId] = useState<string>(() => localStorage.getItem(BOOK_ID_KEY) || generateKey());
+  const [role, setRole] = useState<UserRole>(() => (localStorage.getItem(ROLE_KEY) as UserRole) || UserRole.ADMIN);
+  
   const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem(BASE_STORAGE_KEY + bookId);
-    return saved ? JSON.parse(saved) : { activeDay: createInitialDay(), history: [] };
+    const saved = localStorage.getItem(STORAGE_KEY + bookId);
+    return saved ? JSON.parse(saved) : { activeDay: createInitialDay(), history: [], role: UserRole.ADMIN };
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState<string>("Never");
-  const lastCloudTimestamp = useRef<number>(0);
+  const [lastSyncMsg, setLastSyncMsg] = useState("Local Only");
+  const lastProcessedCloudTime = useRef<number>(0);
 
-  // Sync with Cloud
-  const triggerSync = useCallback(async (newState: AppState) => {
-    if (deviceType === DeviceType.LAPTOP) {
+  // Persistence logic
+  const persist = useCallback(async (newState: AppState) => {
+    localStorage.setItem(STORAGE_KEY + bookId, JSON.stringify(newState));
+    setState(newState);
+
+    if (role === UserRole.ADMIN) {
       setIsSyncing(true);
       const success = await pushToCloud(bookId, newState);
-      if (success) {
-        setLastSyncTime(new Date().toLocaleTimeString());
-        lastCloudTimestamp.current = newState.activeDay.lastUpdated || 0;
-      }
+      setLastSyncMsg(success ? `Last Sync: ${new Date().toLocaleTimeString()}` : "Sync Error - Retrying...");
       setIsSyncing(false);
     }
-  }, [bookId, deviceType]);
+  }, [bookId, role]);
 
-  const updateState = useCallback((newState: AppState) => {
-    localStorage.setItem(BASE_STORAGE_KEY + bookId, JSON.stringify(newState));
-    localStorage.setItem(ACTIVE_KEY_STORAGE, bookId);
-    setState(newState);
-    triggerSync(newState);
-  }, [bookId, triggerSync]);
-
-  // Polling for Viewers (Mobile)
+  // Cloud Polling Logic
   useEffect(() => {
-    if (deviceType === DeviceType.LAPTOP) return;
-
     const poll = async () => {
-      setIsSyncing(true);
-      const cloudState = await fetchFromCloud(bookId);
-      if (cloudState && cloudState.activeDay.lastUpdated) {
-        if (cloudState.activeDay.lastUpdated > lastCloudTimestamp.current) {
-          setState(cloudState);
-          localStorage.setItem(BASE_STORAGE_KEY + bookId, JSON.stringify(cloudState));
-          lastCloudTimestamp.current = cloudState.activeDay.lastUpdated;
-          setLastSyncTime(new Date().toLocaleTimeString());
+      // If we are ADMIN, we don't pull (we are the source of truth), 
+      // UNLESS we just started and need to check if cloud has newer data.
+      // For simplicity, VIEWERS always poll.
+      if (role === UserRole.VIEWER) {
+        setIsSyncing(true);
+        const cloudState = await fetchFromCloud(bookId);
+        if (cloudState && cloudState.activeDay?.lastUpdated) {
+          if (cloudState.activeDay.lastUpdated > lastProcessedCloudTime.current) {
+            setState(cloudState);
+            lastProcessedCloudTime.current = cloudState.activeDay.lastUpdated;
+            setLastSyncMsg(`Live Data: ${new Date().toLocaleTimeString()}`);
+          }
+        } else {
+          setLastSyncMsg("Waiting for Admin...");
         }
+        setIsSyncing(false);
       }
-      setIsSyncing(false);
     };
 
-    const interval = setInterval(poll, 4000);
+    const interval = setInterval(poll, 3000);
     poll();
     return () => clearInterval(interval);
-  }, [bookId, deviceType]);
+  }, [bookId, role]);
 
-  const setSyncKey = async (newKey: string) => {
-    const cleanKey = newKey.trim().toUpperCase();
-    if (cleanKey) {
-      setBookId(cleanKey);
-      localStorage.setItem(ACTIVE_KEY_STORAGE, cleanKey);
-      setIsSyncing(true);
-      const cloudData = await fetchFromCloud(cleanKey);
-      if (cloudData) {
-        setState(cloudData);
-        localStorage.setItem(BASE_STORAGE_KEY + cleanKey, JSON.stringify(cloudData));
-      }
-      setIsSyncing(false);
+  const toggleRole = () => {
+    const nextRole = role === UserRole.ADMIN ? UserRole.VIEWER : UserRole.ADMIN;
+    setRole(nextRole);
+    localStorage.setItem(ROLE_KEY, nextRole);
+  };
+
+  const updateBookId = async (newId: string) => {
+    const cleanId = newId.trim().toUpperCase();
+    if (!cleanId) return;
+    
+    setBookId(cleanId);
+    localStorage.setItem(BOOK_ID_KEY, cleanId);
+    
+    // Immediate pull to check for data
+    setIsSyncing(true);
+    const cloud = await fetchFromCloud(cleanId);
+    if (cloud) {
+      setState(cloud);
+      lastProcessedCloudTime.current = cloud.activeDay.lastUpdated || 0;
     }
+    setIsSyncing(false);
   };
 
   const addOutPartyEntry = (amount: number, method: PaymentMethod) => {
-    const newEntry: OutPartyEntry = {
-      id: crypto.randomUUID(),
-      index: state.activeDay.outPartyEntries.length + 1,
-      method,
-      amount
-    };
-    updateState({
-      ...state,
-      activeDay: {
-        ...state.activeDay,
-        outPartyEntries: [...state.activeDay.outPartyEntries, newEntry]
-      }
-    });
+    const newEntry = { id: crypto.randomUUID(), index: state.activeDay.outPartyEntries.length + 1, method, amount };
+    persist({ ...state, activeDay: { ...state.activeDay, outPartyEntries: [...state.activeDay.outPartyEntries, newEntry] } });
   };
 
   const deleteOutPartyEntry = (id: string) => {
-    updateState({
-      ...state,
-      activeDay: {
-        ...state.activeDay,
-        outPartyEntries: state.activeDay.outPartyEntries
-          .filter(e => e.id !== id)
-          .map((e, i) => ({ ...e, index: i + 1 }))
-      }
-    });
+    const newEntries = state.activeDay.outPartyEntries.filter(e => e.id !== id).map((e, i) => ({ ...e, index: i + 1 }));
+    persist({ ...state, activeDay: { ...state.activeDay, outPartyEntries: newEntries } });
   };
 
   const addMainEntry = (roomNo: string, description: string, method: PaymentMethod, cashIn: number, cashOut: number) => {
-    const newEntry: MainEntry = {
-      id: crypto.randomUUID(),
-      roomNo,
-      description,
-      method,
-      cashIn,
-      cashOut
-    };
-    updateState({
-      ...state,
-      activeDay: {
-        ...state.activeDay,
-        mainEntries: [...state.activeDay.mainEntries, newEntry]
-      }
-    });
+    const newEntry = { id: crypto.randomUUID(), roomNo, description, method, cashIn, cashOut };
+    persist({ ...state, activeDay: { ...state.activeDay, mainEntries: [...state.activeDay.mainEntries, newEntry] } });
   };
 
   const deleteMainEntry = (id: string) => {
-    updateState({
-      ...state,
-      activeDay: {
-        ...state.activeDay,
-        mainEntries: state.activeDay.mainEntries.filter(e => e.id !== id)
-      }
-    });
+    persist({ ...state, activeDay: { ...state.activeDay, mainEntries: state.activeDay.mainEntries.filter(e => e.id !== id) } });
   };
 
   const performDayEnd = () => {
     const active = state.activeDay;
-    const outCash = active.outPartyEntries.filter(e => e.method === PaymentMethod.CASH).reduce((acc, e) => acc + e.amount, 0);
-    const outCard = active.outPartyEntries.filter(e => e.method === PaymentMethod.CARD).reduce((acc, e) => acc + e.amount, 0);
-    const outPaypal = active.outPartyEntries.filter(e => e.method === PaymentMethod.PAYPAL).reduce((acc, e) => acc + e.amount, 0);
+    const opTotal = active.outPartyEntries.reduce((acc, e) => acc + e.amount, 0);
+    const mainIn = active.mainEntries.reduce((acc, e) => acc + e.cashIn, 0);
+    const mainOut = active.mainEntries.reduce((acc, e) => acc + e.cashOut, 0);
     
-    const totalIn = active.mainEntries.reduce((acc, e) => acc + e.cashIn, 0) + outCash + outCard + outPaypal;
-    const totalOut = active.mainEntries.reduce((acc, e) => acc + e.cashOut, 0) + outCard + outPaypal;
+    // Correct Grand Logic: Main In + OP (since OP is external collection) vs Main Out
+    const totalIn = mainIn + opTotal;
+    const totalOut = mainOut;
     const finalBalance = totalIn - totalOut;
 
-    // Create Archive Record
-    const archive: HistoryRecord = {
-      ...active,
-      finalBalance,
-      totalIn,
-      totalOut
-    };
-
-    const nextDayDate = new Date();
-    nextDayDate.setDate(nextDayDate.getDate() + 1);
+    const archive: HistoryRecord = { ...active, totalIn, totalOut, finalBalance };
     
-    updateState({
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    persist({
+      ...state,
       history: [archive, ...state.history],
-      activeDay: {
-        ...createInitialDay(nextDayDate.toLocaleDateString()),
-        openingBalance: finalBalance
-      }
+      activeDay: createInitialDay(tomorrow.toLocaleDateString(), finalBalance)
     });
   };
 
@@ -178,9 +139,11 @@ export const useCashBookStore = (deviceType: DeviceType) => {
     data: state.activeDay,
     history: state.history,
     bookId,
+    role,
     isSyncing,
-    lastSyncTime,
-    setSyncKey,
+    lastSyncMsg,
+    toggleRole,
+    updateBookId,
     addOutPartyEntry,
     deleteOutPartyEntry,
     addMainEntry,

@@ -2,22 +2,17 @@
 import { AppState } from "../types";
 
 /**
- * Shivas Beach Cabanas Cloud Sync Service
- * Uses a public KV storage relay for cross-device communication.
+ * Shivas Beach Cabanas Global Sync Relay
+ * Ensures all devices with the same Book ID see the same data.
  */
 
-// Unique Bucket for Shivas
-const BUCKET_ID = 'ShivasBC_Global_Store_9900'; 
+const BUCKET_ID = 'ShivasBC_Ultimate_Relay_V3_2024'; 
 const API_BASE = `https://kvdb.io/${BUCKET_ID}/`;
 
-/**
- * Pushes the entire app state (Active Day + History) to the cloud.
- */
-export const pushToCloud = async (bookId: string, state: AppState): Promise<boolean> => {
+export const pushToCloud = async (bookId: string, state: any): Promise<boolean> => {
   try {
-    // We use PUT to ensure we overwrite the existing state for this Book ID
     const response = await fetch(`${API_BASE}${bookId}`, {
-      method: 'PUT',
+      method: 'PUT', // Using PUT for total overwrite of the relay object
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...state,
@@ -26,21 +21,24 @@ export const pushToCloud = async (bookId: string, state: AppState): Promise<bool
     });
     return response.ok;
   } catch (error) {
-    console.error("Sync Error (Push):", error);
+    console.error("Critical Sync Failure (Push):", error);
     return false;
   }
 };
 
-/**
- * Fetches the entire app state from the cloud.
- */
-export const fetchFromCloud = async (bookId: string): Promise<AppState | null> => {
+export const fetchFromCloud = async (bookId: string): Promise<any | null> => {
   try {
-    const response = await fetch(`${API_BASE}${bookId}?nocache=${Date.now()}`);
-    if (!response.ok) return null;
+    const response = await fetch(`${API_BASE}${bookId}?timestamp=${Date.now()}`, {
+      mode: 'cors'
+    });
+    if (!response.ok) {
+      if (response.status === 404) return null; // New Book ID
+      throw new Error(`Cloud returned ${response.status}`);
+    }
     const data = await response.json();
-    return data as AppState;
+    return data;
   } catch (error) {
+    console.warn("Sync Relay Unavailable:", error);
     return null;
   }
 };

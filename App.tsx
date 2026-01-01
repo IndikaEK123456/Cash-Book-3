@@ -4,7 +4,7 @@ import Layout from './components/Layout';
 import CashSection from './components/CashSection';
 import HistorySection from './components/HistorySection';
 import { useCashBookStore } from './store';
-import { DeviceType, CurrencyRates } from './types';
+import { DeviceType, CurrencyRates, UserRole } from './types';
 import { fetchLiveRates } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -21,15 +21,17 @@ const App: React.FC = () => {
     data, 
     history,
     bookId, 
+    role,
     isSyncing,
-    lastSyncTime,
-    setSyncKey, 
+    lastSyncMsg,
+    toggleRole,
+    updateBookId, 
     addOutPartyEntry, 
     deleteOutPartyEntry,
     addMainEntry, 
     deleteMainEntry,
     performDayEnd 
-  } = useCashBookStore(detectedDevice);
+  } = useCashBookStore();
 
   useEffect(() => {
     const updateRates = async () => {
@@ -44,15 +46,18 @@ const App: React.FC = () => {
   return (
     <Layout 
       deviceType={detectedDevice} 
+      role={role}
       rates={rates} 
       date={data.date} 
       bookId={bookId} 
-      isSyncingStatus={isSyncing}
-      lastSyncTime={lastSyncTime}
-      onUpdateKey={setSyncKey}
+      syncStatus={lastSyncMsg}
+      isSyncing={isSyncing}
+      onUpdateKey={updateBookId}
+      onToggleRole={toggleRole}
     >
       <CashSection 
-        deviceType={detectedDevice}
+        // We override the viewer check based on UserRole, not just DeviceType
+        deviceType={role === UserRole.ADMIN ? DeviceType.LAPTOP : DeviceType.ANDROID}
         outPartyEntries={data.outPartyEntries}
         mainEntries={data.mainEntries}
         onAddOutParty={addOutPartyEntry}
@@ -65,8 +70,8 @@ const App: React.FC = () => {
 
       <HistorySection history={history} />
       
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[10px] p-1 text-center font-bold tracking-widest uppercase border-t border-slate-800 backdrop-blur-md bg-opacity-95 z-50">
-        Book ID: {bookId} • {detectedDevice} VIEW • Cloud Status: {isSyncing ? 'Synchronizing...' : 'Live'}
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[9px] p-2 text-center font-bold tracking-[0.2em] uppercase border-t border-slate-800 backdrop-blur-md bg-opacity-90 z-50">
+        Active Book: {bookId} • {role} Mode • {lastSyncMsg}
       </div>
     </Layout>
   );

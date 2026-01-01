@@ -11,6 +11,11 @@ export enum DeviceType {
   IPHONE = 'IPHONE'
 }
 
+export enum UserRole {
+  ADMIN = 'ADMIN', // Can edit and push to cloud
+  VIEWER = 'VIEWER' // Read-only, pulls from cloud
+}
+
 export interface OutPartyEntry {
   id: string;
   index: number;
@@ -32,7 +37,7 @@ export interface DailyRecord {
   outPartyEntries: OutPartyEntry[];
   mainEntries: MainEntry[];
   openingBalance: number;
-  lastUpdated?: number; // Timestamp for sync priority
+  lastUpdated?: number;
 }
 
 export interface HistoryRecord extends DailyRecord {
@@ -44,6 +49,7 @@ export interface HistoryRecord extends DailyRecord {
 export interface AppState {
   activeDay: DailyRecord;
   history: HistoryRecord[];
+  role: UserRole;
 }
 
 export interface CurrencyRates {
