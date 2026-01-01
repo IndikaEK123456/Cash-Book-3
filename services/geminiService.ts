@@ -2,12 +2,23 @@
 import { GoogleGenAI } from "@google/genai";
 import { CurrencyRates } from "../types";
 
+/**
+ * Fetches live exchange rates using Gemini API with Search Grounding.
+ * Includes safety checks to prevent 'process is not defined' errors during deployment.
+ */
 export const fetchLiveRates = async (): Promise<CurrencyRates | null> => {
   try {
-    // Fix: Using process.env.API_KEY directly as per SDK guidelines
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    // Note: In a real environment, Search Grounding might provide real-time data.
-    // We use gemini-3-flash-preview for quick queries.
+    // Safety check for browser environments without a bundler polyfill for process
+    const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+    
+    if (!apiKey) {
+      console.warn("Gemini API Key is not available in this environment. Using default rates.");
+      return getFallbackRates();
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Requesting structured data from Gemini
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: "Get the latest exchange rate for 1 USD to LKR and 1 EURO to LKR. Return ONLY a JSON object: { \"usd\": number, \"eur\": number }",
@@ -16,7 +27,6 @@ export const fetchLiveRates = async (): Promise<CurrencyRates | null> => {
       }
     });
 
-    // Fix: Accessing property .text directly instead of method or nested response objects
     const text = response.text || "";
     const match = text.match(/\{.*\}/s);
     if (match) {
@@ -28,13 +38,14 @@ export const fetchLiveRates = async (): Promise<CurrencyRates | null> => {
       };
     }
   } catch (error) {
-    console.error("Failed to fetch rates via Gemini:", error);
+    console.error("Gemini Service Error:", error);
   }
   
-  // Fallback default rates if API fails
-  return {
-    usdToLkr: 310,
-    eurToLkr: 366,
-    lastUpdated: 'Fallback'
-  };
+  return getFallbackRates();
 };
+
+const getFallbackRates = (): CurrencyRates => ({
+  usdToLkr: 310,
+  eurToLkr: 366,
+  lastUpdated: 'Fallback (Live Rates Unavailable)'
+});

@@ -20,7 +20,7 @@ const App: React.FC = () => {
     performDayEnd 
   } = useCashBookStore();
 
-  // Device Detection
+  // Device Detection & Initialization
   useEffect(() => {
     const ua = navigator.userAgent;
     if (/Android/i.test(ua)) {
@@ -32,14 +32,14 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Fetch Rates every 10 minutes
+  // Fetch Live Currency Rates via Gemini
   useEffect(() => {
     const updateRates = async () => {
       const liveRates = await fetchLiveRates();
       if (liveRates) setRates(liveRates);
     };
     updateRates();
-    const interval = setInterval(updateRates, 600000);
+    const interval = setInterval(updateRates, 600000); // 10 minutes
     return () => clearInterval(interval);
   }, []);
 
@@ -63,9 +63,9 @@ const App: React.FC = () => {
         openingBalance={data.openingBalance}
       />
       
-      {/* Footer Info */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[10px] p-1 text-center font-bold tracking-widest uppercase border-t border-slate-800">
-        Active Shared Book: {bookId} • Shivas Beach Cabanas • Live Cloud Engine
+      {/* Real-time Footer Info */}
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[10px] p-1 text-center font-bold tracking-widest uppercase border-t border-slate-800 backdrop-blur-md bg-opacity-95 z-50">
+        Active Shared Book: {bookId} • Shivas Beach Cabanas • Status: Online
       </div>
     </Layout>
   );
