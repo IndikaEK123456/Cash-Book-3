@@ -1,44 +1,46 @@
 
-import { DailyRecord } from "../types";
+import { AppState } from "../types";
 
 /**
  * Shivas Beach Cabanas Cloud Sync Service
- * Uses a public KV storage relay to allow cross-device communication.
+ * Uses a public KV storage relay for cross-device communication.
  */
 
-// Public bucket for Shivas Beach Cabanas. 
-// This allows us to use the Book ID as a unique key for synchronization.
-const BUCKET_ID = 'ShivasBC_v1_Relay_7788'; 
+// Unique Bucket for Shivas
+const BUCKET_ID = 'ShivasBC_Global_Store_9900'; 
 const API_BASE = `https://kvdb.io/${BUCKET_ID}/`;
 
 /**
- * Pushes the current state of the book to the cloud.
- * Only the Laptop (Admin) should ideally perform this.
+ * Pushes the entire app state (Active Day + History) to the cloud.
  */
-export const pushToCloud = async (bookId: string, data: DailyRecord): Promise<boolean> => {
+export const pushToCloud = async (bookId: string, state: AppState): Promise<boolean> => {
   try {
+    // We use PUT to ensure we overwrite the existing state for this Book ID
     const response = await fetch(`${API_BASE}${bookId}`, {
-      method: 'POST',
-      body: JSON.stringify(data),
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...state,
+        activeDay: { ...state.activeDay, lastUpdated: Date.now() }
+      }),
     });
     return response.ok;
   } catch (error) {
-    console.error("Cloud Sync Push Error:", error);
+    console.error("Sync Error (Push):", error);
     return false;
   }
 };
 
 /**
- * Fetches the latest data for a given Book ID from the cloud.
+ * Fetches the entire app state from the cloud.
  */
-export const fetchFromCloud = async (bookId: string): Promise<DailyRecord | null> => {
+export const fetchFromCloud = async (bookId: string): Promise<AppState | null> => {
   try {
-    const response = await fetch(`${API_BASE}${bookId}?t=${Date.now()}`); // Cache busting
+    const response = await fetch(`${API_BASE}${bookId}?nocache=${Date.now()}`);
     if (!response.ok) return null;
     const data = await response.json();
-    return data as DailyRecord;
+    return data as AppState;
   } catch (error) {
-    // Silently fail as polling happens frequently
     return null;
   }
 };

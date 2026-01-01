@@ -32,6 +32,18 @@ export interface DailyRecord {
   outPartyEntries: OutPartyEntry[];
   mainEntries: MainEntry[];
   openingBalance: number;
+  lastUpdated?: number; // Timestamp for sync priority
+}
+
+export interface HistoryRecord extends DailyRecord {
+  finalBalance: number;
+  totalIn: number;
+  totalOut: number;
+}
+
+export interface AppState {
+  activeDay: DailyRecord;
+  history: HistoryRecord[];
 }
 
 export interface CurrencyRates {

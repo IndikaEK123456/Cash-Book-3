@@ -9,10 +9,11 @@ interface LayoutProps {
   date: string;
   bookId: string;
   isSyncingStatus: boolean;
+  lastSyncTime: string;
   onUpdateKey: (key: string) => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, deviceType, rates, date, bookId, isSyncingStatus, onUpdateKey }) => {
+const Layout: React.FC<LayoutProps> = ({ children, deviceType, rates, date, bookId, isSyncingStatus, lastSyncTime, onUpdateKey }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newKey, setNewKey] = useState('');
 
@@ -40,14 +41,16 @@ const Layout: React.FC<LayoutProps> = ({ children, deviceType, rates, date, book
                 onClick={() => setIsModalOpen(!isModalOpen)}
                 className="text-[10px] font-black bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded uppercase transition-colors"
               >
-                {deviceType === DeviceType.LAPTOP ? 'Share Key' : 'Sync to Laptop'}
+                Change ID
               </button>
-              {isSyncingStatus && (
-                <span className="flex items-center gap-2 text-[10px] font-black text-yellow-500 uppercase animate-pulse">
-                  <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-                  Syncing...
-                </span>
-              )}
+              
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 ml-2">
+                {isSyncingStatus ? (
+                   <span className="text-yellow-500 animate-pulse">● Syncing...</span>
+                ) : (
+                   <span>Synced: {lastSyncTime}</span>
+                )}
+              </div>
             </div>
           </div>
           
@@ -75,24 +78,21 @@ const Layout: React.FC<LayoutProps> = ({ children, deviceType, rates, date, book
 
         {isModalOpen && (
           <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 bg-slate-900 border-2 border-slate-800 p-6 rounded-3xl shadow-2xl z-[60] w-full max-w-md">
-            <h3 className="text-lg font-black uppercase mb-4 tracking-widest text-white">Device Synchronization</h3>
+            <h3 className="text-lg font-black uppercase mb-4 tracking-widest text-white">Cloud Connect</h3>
             <p className="text-xs text-slate-400 mb-6 font-medium leading-relaxed uppercase">
-              {deviceType === DeviceType.LAPTOP 
-                ? "Provide this Book ID to your staff. Any changes you make will be visible to them in real-time."
-                : "Enter the Book ID from the laptop to view the live cash book data."
-              }
+              Enter the Book ID to sync data between your Laptop and Mobile devices globally.
             </p>
             <form onSubmit={handleConnect} className="space-y-4">
               <input 
                 type="text" 
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value)}
-                placeholder="ENTER BOOK ID (e.g. SHIVA-XXXX)"
+                placeholder="SHIVA-XXXX"
                 className="w-full bg-black border-2 border-slate-800 rounded-xl p-4 text-white font-black tracking-widest placeholder-slate-700 text-center uppercase focus:border-blue-500 focus:outline-none"
               />
               <div className="flex gap-4">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-800 py-3 rounded-xl font-black uppercase tracking-widest text-xs text-white">Cancel</button>
-                <button type="submit" className="flex-1 bg-blue-600 py-3 rounded-xl font-black uppercase tracking-widest text-xs text-white">Connect Now</button>
+                <button type="submit" className="flex-1 bg-blue-600 py-3 rounded-xl font-black uppercase tracking-widest text-xs text-white">Connect</button>
               </div>
             </form>
           </div>

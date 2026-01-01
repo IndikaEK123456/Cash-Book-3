@@ -2,12 +2,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Layout from './components/Layout';
 import CashSection from './components/CashSection';
+import HistorySection from './components/HistorySection';
 import { useCashBookStore } from './store';
 import { DeviceType, CurrencyRates } from './types';
 import { fetchLiveRates } from './services/geminiService';
 
 const App: React.FC = () => {
-  // Device detection happens once on mount
   const detectedDevice = useMemo(() => {
     const ua = navigator.userAgent;
     if (/Android/i.test(ua)) return DeviceType.ANDROID;
@@ -19,8 +19,10 @@ const App: React.FC = () => {
   
   const { 
     data, 
+    history,
     bookId, 
     isSyncing,
+    lastSyncTime,
     setSyncKey, 
     addOutPartyEntry, 
     deleteOutPartyEntry,
@@ -29,7 +31,6 @@ const App: React.FC = () => {
     performDayEnd 
   } = useCashBookStore(detectedDevice);
 
-  // Fetch Live Currency Rates via Gemini
   useEffect(() => {
     const updateRates = async () => {
       const liveRates = await fetchLiveRates();
@@ -47,6 +48,7 @@ const App: React.FC = () => {
       date={data.date} 
       bookId={bookId} 
       isSyncingStatus={isSyncing}
+      lastSyncTime={lastSyncTime}
       onUpdateKey={setSyncKey}
     >
       <CashSection 
@@ -60,9 +62,11 @@ const App: React.FC = () => {
         onDayEnd={performDayEnd}
         openingBalance={data.openingBalance}
       />
+
+      <HistorySection history={history} />
       
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-400 text-[10px] p-1 text-center font-bold tracking-widest uppercase border-t border-slate-800 backdrop-blur-md bg-opacity-95 z-50">
-        Active Shared Book: {bookId} • {detectedDevice} VIEW • Status: {isSyncing ? 'Syncing...' : 'Connected'}
+        Book ID: {bookId} • {detectedDevice} VIEW • Cloud Status: {isSyncing ? 'Synchronizing...' : 'Live'}
       </div>
     </Layout>
   );
